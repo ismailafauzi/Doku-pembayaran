@@ -1,1 +1,96 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>Checkout & Simulasi Pembayaran Otomatis</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 50px; background: #f9f9f9; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); max-width: 400px; }
+        input { width: 100%; padding: 8px; margin: 8px 0; box-sizing: border-box; }
+        button { background: #ee4d2d; color: white; border: none; padding: 10px; width: 100%; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .status-box { margin-top: 20px; padding: 15px; border-radius: 5px; text-align: center; display: none; }
+        .pending { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    </style>
+</head>
+<body>
 
+<div class="card" id="form-card">
+    <h2>Form Checkout Toko</h2>
+    <label>Nama Pembeli:</label>
+    <input type="text" id="name" value="Budi Santoso">
+    
+    <label>Email:</label>
+    <input type="email" id="email" value="budi@example.com">
+    
+    <label>Total Tagihan (IDR):</label>
+    <input type="number" id="amount" value="50000">
+    
+    <button onclick="createInvoice()">Bayar Sekarang (DOKU)</button>
+</div>
+
+<div class="card status-box" id="status-card">
+    <h3 id="status-title">Menunggu Pembayaran...</h3>
+    <p id="status-desc">Silakan selesaikan pembayaran Anda melalui link DOKU.</p>
+    <div id="payment-link-container"></div>
+</div>
+
+<script>
+    let pollingInterval = null;
+
+    async function createInvoice() {
+        const name = document.getElementById('name').value;
+        const email = document.getElementById('email').value;
+        const amount = document.getElementById('amount').value;
+
+        const res = await fetch('/api/create-invoice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ customerName: name, customerEmail: email, amount })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            // Sembunyikan form, tampilkan kotak status menunggu
+            document.getElementById('form-card').style.display = 'none';
+            const statusCard = document.getElementById('status-card');
+            statusCard.style.display = 'block';
+            statusCard.className = 'card status-box pending';
+
+            document.getElementById('payment-link-container').innerHTML = `
+                <br><a href="${data.paymentUrl}" target="_blank" style="background:#000; color:#fff; padding:10px 15px; text-decoration:none; border-radius:4px; display:inline-block;">Buka Halaman Pembayaran DOKU</a>
+            `;
+
+            // Mulai Polling (Cek database server tiap 3 detik apakah sudah lunas)
+            startPolling(data.invoiceNumber);
+        } else {
+            alert('Gagal membuat tagihan: ' + data.message);
+        }
+    }
+
+    function startPolling(invoiceNumber) {
+        pollingInterval = setInterval(async () => {
+            try {
+                const res = await fetch(`/api/check-status/${invoiceNumber}`);
+                const data = await res.json();
+
+                if (data.status === 'PAID') {
+                    // Hentikan pengecekan
+                    clearInterval(pollingInterval);
+
+                    // Ubah Tampilan Menjadi LUNAS (Seperti di Shopee!)
+                    const statusCard = document.getElementById('status-card');
+                    statusCard.className = 'card status-box success';
+                    document.getElementById('status-title').innerText = '🎉 Pembayaran Berhasil (Lunas)!';
+                    document.getElementById('status-desc').innerText = 'Terima kasih, pesanan Anda sedang diproses oleh sistem.';
+                    document.getElementById('payment-link-container').innerHTML = '';
+                }
+            } catch (e) {
+                console.error('Gagal mengecek status', e);
+            }
+        }, 3000); // Cek tiap 3 detik
+    }
+</script>
+
+</body>
+</html>
